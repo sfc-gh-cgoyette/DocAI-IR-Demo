@@ -24,14 +24,13 @@ Join Document usage to query history (Coming Soon)
 - Process all documents within a stage through a task which checks the resulting table to avoid duplications
 
 
-
 ### Split document pages every page
 Split out every document page individually to process with Document AI
 
 #### Stored Procedure 
 make sure have the database, schema and origin and destination stages 
 
-'''sql
+```sql
 CREATE OR REPLACE PROCEDURE split_document_by_every_page(
     stage_name STRING, 
     file_name STRING, 
@@ -93,14 +92,15 @@ def run(session: Session, stage_name: str, file_name: str, dest_stage_name: str)
             )
                 
     return whole_text
-$$;'''
+$$;
+```
 
 ### To call the stored Procedure after creating it and then list the files in the stage:
 
-'''sql
+```sql
 CALL split_document_by_every_page('@BUILD_REPORTS', '1ACII15-100.pdf', '@DOC_STAGE_SPLIT' );
 LIST @split_documents;
-'''
+```
 
 ### Split document pages by even numbers
 When documents are blank every odd page
@@ -109,7 +109,7 @@ When documents only contain pages with relevant content on every even page
 #### Stored Procedure 
 make sure have the database, schema and origin and destination stages 
 
-'''sql
+```sql
 CREATE OR REPLACE PROCEDURE preprocess_pdf(file_path string, file_name string, dest_stage_name string)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -139,13 +139,16 @@ def run(session, file_path, file_name, dest_stage_name):
         FileOperation(session).put("file:///tmp/"+file_name+"_even.pdf", dest_stage, auto_compress = False)
     return whole_text
 $$;
-'''
+
+```
 
 To call the stored Procedure after creating it:
 
-'''sql
+```sql
+
 CALL preprocess_pdf(build_scoped_file_url(@doc_stage_raw, 'B546_24MA_NORWOOD.pdf'), 'B546_24MA_NORWOOD', '@doc_stage_split' );
-'''
+
+```
 
 ### Split document pages by odd numbers
 When documents are blank every even page
@@ -154,7 +157,7 @@ When documents only contain pages with relevant content on every odd page
 #### Stored Procedure 
 make sure have the database, schema and origin and destination stages 
 
-'''sql
+```sql
 CREATE OR REPLACE PROCEDURE preprocess_pdf(file_path string, file_name string, dest_stage_name string)
 RETURNS STRING
 LANGUAGE PYTHON
@@ -184,27 +187,27 @@ def run(session, file_path, file_name, dest_stage_name):
         FileOperation(session).put("file:///tmp/"+file_name+"_odd.pdf", dest_stage, auto_compress = False)
     return whole_text
 $$;
-'''
+```
 
 To call the stored Procedure after creating it:
-'''sql
+```sql
 CALL preprocess_pdf(build_scoped_file_url(@doc_stage_raw, 'B546_24MA_NORWOOD.pdf'), 'B546_24MA_NORWOOD', '@doc_stage_split' );
-'''
+```
 
 
 ### See every created Document AI Model Build
-'''sq'
+```sq'
 SHOW INSTANCES OF CLASS SNOWFLAKE.ML.DOCUMENT_INTELLIGENCE;
-'''
+```
 
 ### Delete a specific Document AI Model Build
-'''sql
+```sql
 DROP INSTANCE NIKOLAI_SNOWFLAKE_TS;
-'''
+```
 
 ### Run predict function with JSON and Directory information in the output
 
-'''sql
+```sql
 SELECT 
 Relative_path as file_name --https://docs.snowflake.com/en/user-guide/data-load-dirtables-query
 , size as file_size
@@ -212,11 +215,11 @@ Relative_path as file_name --https://docs.snowflake.com/en/user-guide/data-load-
 , file_url as snowflake_file_url
 , NIKOLAI_MANUAL_TEST!predict(get_presigned_url('@NIKOLAI_TEST_STAGE', RELATIVE_PATH ), 1) as json
 from directory(@NIKOLAI_TEST_STAGE)
-'''
+```
 
 ### Create flattened table with list in array
 
-'''sql
+```sql
 -- materialize the table with the JSON already unnested (2 options as there are different ways to handle list outputs)
 CREATE OR REPLACE TABLE doc_ai_ns.doc_ai_ns.manuals_test_2 AS (
 WITH temp as(
@@ -252,11 +255,11 @@ FROM doc_ai_ns.doc_ai_ns.manuals_test_table
 , LATERAL FLATTEN(input => json:list_of_units) j --if you want to comma delimit the list
 GROUP BY ALL
 ;
-'''
+```
 
 ### Create flattened table with a list flattened out
 
-'''sql
+```sql
 -- materialize the table with the JSON already unnested (2 options as there are different ways to handle list outputs)
 CREATE OR REPLACE TABLE doc_ai_ns.doc_ai_ns.manuals_test_2 AS (
 WITH temp as(
@@ -310,11 +313,11 @@ FROM first_flatten a
 LEFT JOIN second_flatten b ON a.file_name = b.file_name
 )
 ;
-'''
+```
 
 ### Restructure tables using a number of lists
 
-'''sql
+```sql
 CREATE TABLE doc_ai_ns.doc_ai_ns.test_table_2 (
     result VARIANT
 );
@@ -508,7 +511,7 @@ FROM
 ORDER BY
   b.seq;
 ;
-'''
+```
 
 
 ### Transform and Filter with JSON lists
@@ -518,7 +521,7 @@ ORDER BY
 
 ### Process all documents within a stage and batch the operation by up to 1000 document every batch
 
-'''sql
+```sql
 CREATE OR REPLACE PROCEDURE batch_prediction(model_name VARCHAR, model_version INTEGER, stage_name VARCHAR, result_table_name VARCHAR, batch_size INTEGER)
 RETURNS TABLE(file_name VARCHAR(100), prediction VARCHAR)
 LANGUAGE SQL
@@ -549,15 +552,15 @@ AS
     res := (EXECUTE IMMEDIATE :query_result);
     RETURN TABLE(res);
   END;
-'''
+```
 
-'''
+```
 CALL batch_prediction('NIKOLAI_CONTRACT_TEST', 2, 'CONTRACTS_TEST', 'contract_test_2', 20);
-'''
+```
 
 ### Process all documents within a stage through a task which checks the resulting table to avoid duplications
 
-'''sql
+```sql
 -- create the output table, important part is to have the `relative_path` there
 create table if not exists stage_results(relative_path varchar, res varchar);
 
@@ -584,4 +587,4 @@ INSERT INTO stage_results (
   -- keep in mind that the default limit for TASK execution is 1 hour only!
   LIMIT 20
 ); 
-'''
+```
