@@ -93,14 +93,12 @@ def run(session: Session, stage_name: str, file_name: str, dest_stage_name: str)
             )
                 
     return whole_text
-$$;
-'''
+$$;'''
 
-To call the stored Procedure after creating it and then list the files in the stage:
+### To call the stored Procedure after creating it and then list the files in the stage:
 
 '''sql
 CALL split_document_by_every_page('@BUILD_REPORTS', '1ACII15-100.pdf', '@DOC_STAGE_SPLIT' );
-
 LIST @split_documents;
 '''
 
@@ -144,6 +142,7 @@ $$;
 '''
 
 To call the stored Procedure after creating it:
+
 '''sql
 CALL preprocess_pdf(build_scoped_file_url(@doc_stage_raw, 'B546_24MA_NORWOOD.pdf'), 'B546_24MA_NORWOOD', '@doc_stage_split' );
 '''
