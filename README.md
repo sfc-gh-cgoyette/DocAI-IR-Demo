@@ -1,154 +1,41 @@
 # DocAI-IR-Demo
 Demonstration of document parsing, ingestion, and processing with DocAI in Snowflake
 
+## Notes on Build Sheet measures, for DocAI dev
+#### Desired measures:
+- focal_file
+- rotor_assembly
+- diffuser_assembly
+
+Rotor assembly and usually Diffuser assembly values are usually known up front. 
+
+**Goal is to find the focal file id.**
+Rotor and diffuser are used as look up keys
+
+Notes:
+- 'Aero File' the same as 'Focal File'? Yes.
+  - e.g., C950, C350 dirs
+
+Approach: Select 50% of documents in Build Books dir for training & fine tuning
+- Sort by name
+  - Select every other document in directory
+  - Intention here is to capture a representative sample of Build Books across products
+  
+- Baseline experiment: splitting PDFs into single page files, measure recall for information requested. 
+  - Ignore odd/even blank pages distinction, for now. Observe realized performance on single-page-only approach. Refine as necessary, e.g., 
+    - omit blank pages? 
+
 ## Pre-processing Documents
-In some cases documents need to be split before processing. For example, if you have merged documents such as scans and need to ask the question sets against individual pages, you will first need to split out the pages before processing them with Document AI. Here you have three prewritten stored procedures:
+In some cases documents need to be split before processing. For example, if you have merged documents such as scans and need to ask the question sets against individual pages, you will first need to split out the pages before processing them with Document AI. 
 
-1. Split every page into individual documents
-2. Split even pages
-3. Split odd pages
-
-## Document AI 
-Check for all model builds created
-Delete Model Builds
-Check usage (credits) of Document AI (Coming Soon)
-Join Document usage to query history (Coming Soon)
-
-## Post-Processing Document AI JSON files
-- Run predict function with JSON as an output with directory information
-- Create flattened table with a list as an array
-- Create flattened table with a list flattened
-- Restructure tables using a number of lists
-- Transform and Filter with JSON lists
-- Process all documents within a stage and batch the operation by up to 1000 document every batch
-- Process all documents within a stage through a task which checks the resulting table to avoid duplications
-
+There are three stored procedure definitions in this repo
 
 ### Split document pages every page
 Split out every document page individually to process with Document AI
 
 #### Stored Procedure 
 make sure have the database, schema and origin and destination stages 
-
-```sql
-CREATE OR REPLACE PROCEDURE split_document_by_every_page(
-    stage_name STRING, 
-    file_name STRING, 
-    dest_stage_name STRING
-)
-RETURNS STRING
-LANGUAGE PYTHON
-RUNTIME_VERSION = '3.8'
-PACKAGES = ('snowflake-snowpark-python', 'pypdf2')
-HANDLER = 'run'
-AS
-$$
-from PyPDF2 import PdfFileReader, PdfWriter
-from snowflake.snowpark import Session
-from snowflake.snowpark.functions import col
-from snowflake.snowpark.file_operation import FileOperation
-from io import BytesIO
-import os
-
-def run(session: Session, stage_name: str, file_name: str, dest_stage_name: str) -> str:
-    whole_text = "Success"
-
-    # Construct the file URL
-    file_url = f"{stage_name}/{file_name}"
-
-    # Retrieve the file from the stage and save it to /tmp/
-    get_result = session.file.get(file_url, '/tmp/')
-    file_path = os.path.join('/tmp/', file_name)
-    
-    if not os.path.exists(file_path):
-        return f"File {file_name} not found in {stage_name}"
-
-    with open(file_path, 'rb') as f:
-        pdf_data = f.read()
-        pdf_reader = PdfFileReader(BytesIO(pdf_data))
-        num_pages = pdf_reader.getNumPages()
-
-        for page_num in range(num_pages):
-            writer = PdfWriter()
-            writer.add_page(pdf_reader.getPage(page_num))
-                
-            # Construct the correct file path for the split page
-            batch_filename = f'{file_name}_page_{page_num + 1}.pdf'
-            batch_file_path = os.path.join('/tmp/', batch_filename)
-            
-            # Save each page to a separate PDF file
-            with open(batch_file_path, 'wb') as output_file:
-                writer.write(output_file)
-            
-            # Verify the file exists before uploading
-            if not os.path.exists(batch_file_path):
-                return f"Failed to create the file {batch_filename}"
-
-            # Upload the file to the destination stage
-            FileOperation(session).put(
-                f"file://{batch_file_path}",
-                dest_stage_name,
-                auto_compress=False
-            )
-                
-    return whole_text
-$$;
-```
-
-### To call the stored Procedure after creating it and then list the files in the stage:
-
-```sql
-CALL split_document_by_every_page('@BUILD_REPORTS', '1ACII15-100.pdf', '@DOC_STAGE_SPLIT' );
-LIST @split_documents;
-```
-
-### Split document pages by even numbers
-When documents are blank every odd page
-When documents only contain pages with relevant content on every even page
-
-#### Stored Procedure 
-make sure have the database, schema and origin and destination stages 
-
-```sql
-CREATE OR REPLACE PROCEDURE preprocess_pdf(file_path string, file_name string, dest_stage_name string)
-RETURNS STRING
-LANGUAGE PYTHON
-RUNTIME_VERSION = '3.8'
-PACKAGES = ('snowflake-snowpark-python','pypdf2')
-HANDLER = 'run'
-AS
-$$
-from PyPDF2 import PdfFileReader, PdfWriter
-from snowflake.snowpark.files import SnowflakeFile
-from snowflake.snowpark import Session, FileOperation
-from io import BytesIO
-def run(session, file_path, file_name, dest_stage_name):
-    whole_text = "Success"
-    dest_stage = dest_stage_name
-    with SnowflakeFile.open(file_path, 'rb') as file:
-        f = BytesIO(file.readall())
-        input_pdf = PdfFileReader(f)
-        writer = PdfWriter()
-        # Add only even pages to the writer
-        for i in range(1, len(input_pdf.pages), 2):
-            writer.add_page(input_pdf.pages[i])
-        # Save the even pages to a separate PDF file
-        batch_filename = f'//tmp/{file_name}_even.pdf'
-        with open(batch_filename, 'wb') as output_file:
-            writer.write(output_file)
-        FileOperation(session).put("file:///tmp/"+file_name+"_even.pdf", dest_stage, auto_compress = False)
-    return whole_text
-$$;
-
-```
-
-To call the stored Procedure after creating it:
-
-```sql
-
-CALL preprocess_pdf(build_scoped_file_url(@doc_stage_raw, 'B546_24MA_NORWOOD.pdf'), 'B546_24MA_NORWOOD', '@doc_stage_split' );
-
-```
+- Split every PDF in stage into single page PDFs: [split_by_each_page](split_all_by_every_page.sql)
 
 ### Split document pages by odd numbers
 When documents are blank every even page
@@ -156,6 +43,45 @@ When documents only contain pages with relevant content on every odd page
 
 #### Stored Procedure 
 make sure have the database, schema and origin and destination stages 
+- Split odd pages <Note: currently 1:1 only; does not crawl stage for all docs> : [split_by_odd](split_by_odd.sql)
+
+### Split document pages by even numbers
+When documents are blank every odd page
+When documents only contain pages with relevant content on every even page
+
+#### Stored Procedure 
+make sure have the database, schema and origin and destination stages 
+- Split even pages <Note: currently 1:1 only; does not crawl stage for all docs> : [split_by_even](split_by_even.sql)
+
+
+## Document AI
+Public Documentation, overview: (https://docs.snowflake.com/en/user-guide/snowflake-cortex/document-ai/overview)
+
+The core workflow is as follows: 
+1. SQL: Set up required objects & privileges
+2. SQL and/or Python SPROCs: Prepare documents (optional, use-case-specific)
+3. [Snowsight: Create new Document AI model Build](https://docs.snowflake.com/en/user-guide/snowflake-cortex/document-ai/prepare-model-build#create-a-document-ai-model-build)
+  a. Upload prepared documents
+  b. Snowsight: Annotate documents
+  c. define measures
+  d. observe zero-shot results. Note: recommend reviewing at least 20 documents before Training (fine tuning)
+5. Snowsight: Publish first model version OR fine tune (Train)
+  a. [Recommendations/guidelines for training time](https://docs.snowflake.com/en/user-guide/snowflake-cortex/document-ai/prepare-model-build#training-time-estimation) 
+6. Iterate to satisfactory performance
+7. Use published model to infer results on unseen documents
+
+# SQL snippets, utilities 
+
+## Topic: Post-Processing 
+
+### Managing Document AI JSON files
+- Run predict function with JSON as an output with directory information
+- Create flattened table with a list as an array
+- Create flattened table with a list flattened
+- Restructure tables using a number of lists
+- Transform and Filter with JSON lists
+- Process all documents within a stage and batch the operation by up to 1000 document every batch
+- Process all documents within a stage through a task which checks the resulting table to avoid duplications
 
 ```sql
 CREATE OR REPLACE PROCEDURE preprocess_pdf(file_path string, file_name string, dest_stage_name string)
@@ -193,7 +119,6 @@ To call the stored Procedure after creating it:
 ```sql
 CALL preprocess_pdf(build_scoped_file_url(@doc_stage_raw, 'B546_24MA_NORWOOD.pdf'), 'B546_24MA_NORWOOD', '@doc_stage_split' );
 ```
-
 
 ### See every created Document AI Model Build
 ```sq'
@@ -512,7 +437,6 @@ ORDER BY
   b.seq;
 ;
 ```
-
 
 ### Transform and Filter with JSON lists
 - Higher Order Functions https://medium.com/snowflake/snowflake-supports-higher-order-functions-dfa4b7682f7a 
